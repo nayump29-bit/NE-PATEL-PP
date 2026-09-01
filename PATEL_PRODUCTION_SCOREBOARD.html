@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1080, height=1920">
+    <title>PATEL PRODUCTION - OBS Scoreboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+    <style>
+        :root {
+            --accent-purple: #7c3aed;
+            --bg-white: #ffffff;
+            --text-dark: #111827;
+            --text-light: #ffffff;
+            --eliminated-red: #dc2626;
+        }
+
+        body { 
+            margin: 0; padding: 0; width: 1080px; height: 1920px;
+            background: transparent !important; font-family: 'Oswald', sans-serif; 
+            overflow: hidden; display: flex; justify-content: center; align-items: flex-start; padding-top: 30px;
+        }
+
+        .scoreboard-wrapper {
+            width: 380px; background: var(--bg-white); border: 2px solid var(--accent-purple); 
+            display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+            border-radius: 4px; overflow: hidden;
+        }
+
+        .title-bar { 
+            background: var(--bg-white); color: var(--text-dark); text-align: center; 
+            padding: 10px; font-size: 18px; font-family: 'Montserrat', sans-serif; 
+            font-weight: 800; text-transform: uppercase; border-bottom: 2px solid var(--accent-purple);
+        }
+
+        .title-sub { font-size: 11px; color: var(--accent-purple); display: block; letter-spacing: 2px; }
+
+        .header, .team-row { display: grid; grid-template-columns: 34px 156px 80px 55px 55px; align-items: center; }
+
+        .header { 
+            background: var(--bg-white); border-bottom: 2px solid var(--accent-purple);
+            color: var(--text-dark); font-size: 11px; font-family: 'Montserrat', sans-serif; font-weight: 800;
+        }
+        .header div { padding: 7px 0; text-align: center; }
+        .header .col-team { text-align: left; padding-left: 8px; }
+
+        .team-row { height: 40px; border-bottom: 1px solid #e5e7eb; background: var(--bg-white); }
+        
+        .cell { display: flex; align-items: center; justify-content: center; font-weight: 700; height: 100%; font-size: 15px; }
+        .cell.rank { background-color: var(--accent-purple); color: var(--text-light); font-family: 'Montserrat', sans-serif; }
+        
+        .cell.team { color: var(--text-dark); justify-content: flex-start; padding-left: 8px; gap: 8px; font-family: 'Montserrat', sans-serif; font-size: 12px; background: transparent; }
+        
+        .team-logo { width: 28px; height: 28px; object-fit: contain; border-radius: 4px; flex-shrink: 0; background: transparent; }
+        .team-name-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+        
+        .alive-bars { display: flex; gap: 3px; align-items: center; height: 14px; }
+        .status-bar { width: 4px; height: 14px; background-color: var(--accent-purple); border-radius: 1px; }
+        .status-bar.dead { background-color: #e5e7eb; }
+
+        .eliminated-badge { color: var(--eliminated-red); font-size: 10px; font-family: 'Montserrat', sans-serif; font-weight: 800; }
+
+        .cell.fin, .cell.pt { background-color: var(--accent-purple); color: var(--text-light); border-left: 1px solid rgba(255, 255, 255, 0.25); }
+        .team-row.eliminated .cell.team { opacity: 0.5; }
+    </style>
+</head>
+<body>
+
+<div class="scoreboard-wrapper">
+    <div class="title-bar">
+        <span>PATEL PRODUCTION</span>
+        <span class="title-sub" id="roundTitle">ROUND 1</span>
+    </div>
+    <div class="header">
+        <div class="col-rank">#</div>
+        <div class="col-team">TEAM NAME</div>
+        <div class="col-status">STATUS</div>
+        <div class="col-fin">FIN</div>
+        <div class="col-pt">PTS</div>
+    </div>
+    <div id="board"></div>
+</div>
+
+<script>
+    // --- FIREBASE CONFIG (NEW PATEL PP) ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyBazKZaj3QsgaQHPJxYfs4LyirQ7wswH7I",
+        authDomain: "new-patel-pp.firebaseapp.com",
+        databaseURL: "https://new-patel-pp-default-rtdb.firebaseio.com",
+        projectId: "new-patel-pp",
+        storageBucket: "new-patel-pp.firebasestorage.app",
+        messagingSenderId: "426501539228",
+        appId: "1:426501539228:web:fcd8f65c992590a61fb459"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const dbRef = db.ref('patel_tournament_state');
+
+    const PLACEMENT_POINTS = { 1: 10, 2: 6, 3: 5, 4: 4, 5: 3, 6: 2, 7: 1, 8: 1 };
+
+    dbRef.on('value', (snapshot) => {
+        const savedState = snapshot.val();
+        renderBoard(savedState);
+    });
+
+    function renderBoard(savedState) {
+        if (!savedState) {
+            savedState = {
+                round: 1,
+                eliminationSequence: [],
+                teams: Array.from({length: 25}, (_, i) => ({
+                    slot: i + 1, team: `Team ${String.fromCharCode(65 + i)}`, logo: '', alive: 4, fin: 0, totalPts: 0
+                }))
+            };
+        }
+
+        document.getElementById('roundTitle').innerText = `ROUND ${savedState.round || 1} / 10`;
+
+        let elimSeq = savedState.eliminationSequence || [];
+        let placePtsMap = new Array(savedState.teams.length).fill(0);
+        let eliminationRanks = {};
+
+        elimSeq.forEach((teamIdx, index) => {
+            eliminationRanks[teamIdx] = savedState.teams.length - index;
+        });
+
+        savedState.teams.forEach((t, idx) => {
+            if (eliminationRanks[idx] !== undefined) {
+                let r = eliminationRanks[idx];
+                if (r <= 8) {
+                    placePtsMap[idx] = PLACEMENT_POINTS[r] || 0;
+                }
+            }
+        });
+
+        let teamDataWithScores = savedState.teams.map((t, idx) => {
+            let placePts = placePtsMap[idx];
+            let kills = t.fin || 0;
+            let currentRoundPts = placePts + kills;
+            let grandTotal = (t.totalPts || 0) + currentRoundPts;
+            return { ...t, grandTotal, currentRoundPts, totalKills: kills };
+        });
+
+        teamDataWithScores.sort((a, b) => {
+            if (b.grandTotal !== a.grandTotal) {
+                return b.grandTotal - a.grandTotal;
+            }
+            return b.totalKills - a.totalKills;
+        });
+
+        let html = '';
+        for (let i = 0; i < 25; i++) {
+            const t = teamDataWithScores[i] || { team: '', logo: '', alive: 4, fin: 0, grandTotal: 0 };
+            const isElim = t.alive === 0;
+            
+            let logoHtml = '';
+            if (t.logo && t.logo.trim() !== '') {
+                logoHtml = `<img src="${t.logo}" class="team-logo">`;
+            }
+
+            let statusHtml = '';
+            if (isElim) {
+                statusHtml = `<span class="eliminated-badge">ELIMINATED</span>`;
+            } else {
+                let aliveCount = Math.max(0, Math.min(4, t.alive));
+                let bars = '';
+                for (let j = 1; j <= 4; j++) {
+                    bars += `<div class="status-bar ${j <= aliveCount ? '' : 'dead'}"></div>`;
+                }
+                statusHtml = `<div class="alive-bars">${bars}</div>`;
+            }
+
+            html += `
+                <div class="team-row ${isElim ? 'eliminated' : ''}">
+                    <div class="cell rank">${i + 1}</div>
+                    <div class="cell team" title="${t.team}">
+                        ${logoHtml}
+                        <span class="team-name-text">${(t.team || '').substring(0, 7).toUpperCase()}</span>
+                    </div>
+                    <div class="cell status">${statusHtml}</div>
+                    <div class="cell fin">${t.fin || 0}</div>
+                    <div class="cell pt">${t.grandTotal}</div>
+                </div>`;
+        }
+        document.getElementById('board').innerHTML = html;
+    }
+</script>
+</body>
+</html>
